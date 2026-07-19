@@ -32,3 +32,12 @@ tailscale funnel --https=8443 --bg --yes 4174
 ```
 
 The current public endpoint is intentionally on HTTPS port 8443 so an existing HTTPS root on port 443 is not replaced. The exact hostname is environment-specific and must be taken from `tailscale funnel status`; no Tailscale secrets belong in this repository.
+
+Health and recovery:
+
+```bash
+/usr/bin/node /usr/share/nodejs/npm/bin/npm-cli.js run probe:readiness -- --base=http://127.0.0.1:4174
+scripts/tailscale-diagnostics.sh "https://<verified-hostname>:8443"
+```
+
+`/health.json` and the readiness probe cover the application/serving layer only. They do not prove Tailscale reachability, ACL behavior, allowed-device browser behavior, or absence of public exposure. See `DEPLOYMENT_RUNBOOK.md` for restart, rollback, negative probes and the release matrix.

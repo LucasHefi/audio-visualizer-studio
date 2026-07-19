@@ -1,15 +1,9 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { migrateSettings, sanitizeSettings, settingsSchemaToDefaults, SCENE_SETTINGS_SCHEMA } from './settingsSchema';
 import type { CanvasProfileId, PaletteId, SceneId, SceneSettings, StoredProjectState } from '../types';
 
-export const DEFAULT_SCENE_SETTINGS: SceneSettings = {
-  energy: 0.72,
-  sensitivity: 0.68,
-  motion: 0.52,
-  density: 0.58,
-  glow: 0.7,
-  background: 0.45,
-};
+export const DEFAULT_SCENE_SETTINGS: SceneSettings = settingsSchemaToDefaults(SCENE_SETTINGS_SCHEMA) as unknown as SceneSettings;
 
 const sceneIds: SceneId[] = ['spectrum', 'waveform', 'orbital', 'fluid-glow'];
 const paletteIds: PaletteId[] = ['aurora', 'ember', 'mono', 'ocean'];
@@ -27,7 +21,7 @@ const DEFAULT_PROJECT: StoredProjectState = {
   seed: 1407,
 };
 
-const migrateProject = (persisted: unknown): StoredProjectState => {
+export const migrateProject = (persisted: unknown, version = 1): StoredProjectState => {
   if (!persisted || typeof persisted !== 'object') return { ...DEFAULT_PROJECT, sceneSettings: defaultSettings() };
   const candidate = persisted as Partial<StoredProjectState>;
   const incoming = candidate.sceneSettings && typeof candidate.sceneSettings === 'object' ? candidate.sceneSettings : {};
@@ -35,10 +29,8 @@ const migrateProject = (persisted: unknown): StoredProjectState => {
   for (const sceneId of sceneIds) {
     const settings = (incoming as Partial<Record<SceneId, Partial<SceneSettings>>>)[sceneId];
     if (!settings || typeof settings !== 'object') continue;
-    for (const key of Object.keys(DEFAULT_SCENE_SETTINGS) as Array<keyof SceneSettings>) {
-      const value = settings[key];
-      if (typeof value === 'number' && Number.isFinite(value)) sceneSettings[sceneId][key] = Math.min(1, Math.max(0, value));
-    }
+    const migrated = migrateSettings(SCENE_SETTINGS_SCHEMA, settings, version);
+    sceneSettings[sceneId] = sanitizeSettings(SCENE_SETTINGS_SCHEMA, migrated);
   }
   return {
     projectName: typeof candidate.projectName === 'string' && candidate.projectName.trim() ? candidate.projectName : DEFAULT_PROJECT.projectName,
@@ -87,8 +79,8 @@ export const useProjectStore = create<ProjectStore>()(
     }),
     {
       name: 'audio-visualizer-project',
-      version: 1,
-      migrate: (persistedState) => migrateProject(persistedState),
+      version: 2,
+      migrate: (persistedState, version) => migrateProject(persistedState, version),
       partialize: (state) => ({
         projectName: state.projectName,
         activeSceneId: state.activeSceneId,

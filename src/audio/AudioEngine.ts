@@ -1,4 +1,4 @@
-import { calculateBeatPulse, calculateEnergyBands, clamp, createSilentFrame } from '../core/audioMath';
+import { calculateBeatPulse, calculateEnergyBands, clamp, createSilentFrame, toReadonlyNumericArray } from '../core/audioMath';
 import type { AudioFrame, AudioState } from '../types';
 
 type AudioStateListener = (state: AudioState) => void;
@@ -100,7 +100,7 @@ export class AudioEngine {
     const volume = clamp(total / this.waveformData.length);
     const beatPulse = calculateBeatPulse(volume, this.previousVolume);
     this.previousVolume = volume;
-    return { ...bands, frequencyBins: this.frequencyData, waveform: this.waveformData, volume, beatPulse };
+    return { ...bands, frequencyBins: toReadonlyNumericArray(this.frequencyData), waveform: toReadonlyNumericArray(this.waveformData), volume, beatPulse };
   }
 
   public dispose(): void {

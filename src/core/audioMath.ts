@@ -1,7 +1,9 @@
-import type { AudioFrame } from '../types';
+import type { AudioFrame, ReadonlyNumericArray } from '../types';
 
 export const clamp = (value: number, min = 0, max = 1): number =>
   Math.min(max, Math.max(min, value));
+
+export const toReadonlyNumericArray = (values: ArrayLike<number>): ReadonlyNumericArray => Object.freeze(Array.from(values));
 
 export const averageRange = (values: Uint8Array, start: number, end: number): number => {
   if (values.length === 0 || end <= start) return 0;
@@ -25,8 +27,8 @@ export const calculateBeatPulse = (volume: number, previousVolume: number): numb
   clamp(Math.max(0, volume - previousVolume) * 4 + volume * 0.12);
 
 export const createSilentFrame = (size = 128): AudioFrame => ({
-  frequencyBins: new Uint8Array(size),
-  waveform: new Uint8Array(size).fill(128),
+  frequencyBins: toReadonlyNumericArray(new Uint8Array(size)),
+  waveform: toReadonlyNumericArray(new Uint8Array(size).fill(128)),
   bassEnergy: 0,
   midEnergy: 0,
   trebleEnergy: 0,

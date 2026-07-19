@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { calculateBeatPulse, calculateEnergyBands, clamp, formatTime } from './audioMath';
+import { calculateBeatPulse, calculateEnergyBands, clamp, createSilentFrame, formatTime } from './audioMath';
 
 describe('audio math contract', () => {
   it('normalises frequency bands to the 0..1 range', () => {
@@ -11,6 +11,13 @@ describe('audio math contract', () => {
     expect(bands.bassEnergy).toBe(1);
     expect(bands.midEnergy).toBeCloseTo(128 / 255, 2);
     expect(bands.trebleEnergy).toBeCloseTo(64 / 255, 2);
+  });
+
+  it('keeps module-facing silent frames immutable snapshots', () => {
+    const frame = createSilentFrame(4);
+    expect(Object.isFrozen(frame.frequencyBins)).toBe(true);
+    expect(Object.isFrozen(frame.waveform)).toBe(true);
+    expect(() => { (frame.frequencyBins as number[])[0] = 1; }).toThrow();
   });
 
   it('keeps pulse and values bounded', () => {

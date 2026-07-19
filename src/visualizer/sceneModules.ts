@@ -1,5 +1,20 @@
 import { clamp } from '../core/audioMath';
-import type { AudioFrame, Palette, SceneModule, SceneSettings } from '../types';
+import { SCENE_SETTINGS_SCHEMA } from '../core/settingsSchema';
+import { createSceneRegistry } from './moduleContract';
+import { MODULE_API_VERSION, type AudioFrame, type Palette, type SceneManifest, type SceneModule, type SceneSettings } from '../types';
+
+const createManifest = (id: SceneManifest['id'], name: string, description: string, tags: readonly string[]): SceneManifest => ({
+  id,
+  kind: 'visualizer',
+  apiVersion: MODULE_API_VERSION,
+  version: '1.0.0',
+  name,
+  description,
+  tags,
+  capabilities: ['audio-frame', 'canvas', 'settings'],
+  entitlement: 'core',
+  settingsSchema: SCENE_SETTINGS_SCHEMA,
+});
 
 const hexToRgba = (hex: string, alpha: number): string => {
   const clean = hex.replace('#', '');
@@ -36,12 +51,7 @@ const paintBackground = (
 };
 
 const spectrum: SceneModule = {
-  manifest: {
-    id: 'spectrum',
-    name: 'Spectrum',
-    description: 'Crisp frequency columns that follow the pulse.',
-    tags: ['frequency', 'graphic', 'responsive'],
-  },
+  manifest: createManifest('spectrum', 'Spectrum', 'Crisp frequency columns that follow the pulse.', ['frequency', 'graphic', 'responsive']),
   defaults: { energy: 0.72, sensitivity: 0.68, motion: 0.52, density: 0.58, glow: 0.7, background: 0.45 },
   render: (ctx, width, height, frame, settings, palette, elapsed) => {
     paintBackground(ctx, width, height, palette, 0.8 + settings.background * 0.4);
@@ -78,12 +88,7 @@ const spectrum: SceneModule = {
 };
 
 const waveform: SceneModule = {
-  manifest: {
-    id: 'waveform',
-    name: 'Waveform',
-    description: 'A luminous ribbon with an organic audio contour.',
-    tags: ['wave', 'organic', 'line'],
-  },
+  manifest: createManifest('waveform', 'Waveform', 'A luminous ribbon with an organic audio contour.', ['wave', 'organic', 'line']),
   defaults: { energy: 0.76, sensitivity: 0.72, motion: 0.4, density: 0.5, glow: 0.82, background: 0.5 },
   render: (ctx, width, height, frame, settings, palette, elapsed) => {
     paintBackground(ctx, width, height, palette, 0.9 + settings.background * 0.3);
@@ -121,12 +126,7 @@ const waveform: SceneModule = {
 };
 
 const orbital: SceneModule = {
-  manifest: {
-    id: 'orbital',
-    name: 'Orbital',
-    description: 'Layered particles and rings expanding with low frequencies.',
-    tags: ['particles', 'orbit', 'depth'],
-  },
+  manifest: createManifest('orbital', 'Orbital', 'Layered particles and rings expanding with low frequencies.', ['particles', 'orbit', 'depth']),
   defaults: { energy: 0.7, sensitivity: 0.62, motion: 0.62, density: 0.7, glow: 0.78, background: 0.28 },
   render: (ctx, width, height, frame, settings, palette, elapsed, seed) => {
     paintBackground(ctx, width, height, palette, 0.62 + settings.background * 0.5);
@@ -163,12 +163,7 @@ const orbital: SceneModule = {
 };
 
 const fluidGlow: SceneModule = {
-  manifest: {
-    id: 'fluid-glow',
-    name: 'Fluid Glow',
-    description: 'Slow clouds of light for atmospheric mixes.',
-    tags: ['ambient', 'glow', 'slow'],
-  },
+  manifest: createManifest('fluid-glow', 'Fluid Glow', 'Slow clouds of light for atmospheric mixes.', ['ambient', 'glow', 'slow']),
   defaults: { energy: 0.64, sensitivity: 0.55, motion: 0.25, density: 0.46, glow: 0.92, background: 0.62 },
   render: (ctx, width, height, frame, settings, palette, elapsed, seed) => {
     paintBackground(ctx, width, height, palette, 1.1 + settings.background * 0.25);
@@ -208,3 +203,5 @@ export const SCENE_MODULES: Record<string, SceneModule> = {
 };
 
 export const SCENE_LIST = Object.values(SCENE_MODULES);
+export const SCENE_REGISTRY = createSceneRegistry(SCENE_LIST);
+export const AVAILABLE_SCENE_LIST = SCENE_REGISTRY.list();

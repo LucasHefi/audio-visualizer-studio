@@ -4,7 +4,7 @@ import { formatTime } from './core/audioMath';
 import { CANVAS_PROFILES, PALETTE_LIST, PALETTES, PROFILE_LIST } from './core/catalog';
 import { useProjectStore } from './core/projectStore';
 import { CanvasRuntime } from './visualizer/CanvasRuntime';
-import { SCENE_LIST } from './visualizer/sceneModules';
+import { AVAILABLE_SCENE_LIST, SCENE_REGISTRY } from './visualizer/sceneModules';
 import type { AudioFrame, AudioState, Palette, SceneId, SceneSettings } from './types';
 import './styles.css';
 
@@ -29,6 +29,7 @@ function VisualizerCanvas({ engine, palette, settings, sceneId, seed, profileRat
   const paletteRef = useRef(palette);
   const settingsRef = useRef(settings);
   const seedRef = useRef(seed);
+  const [runtimeError, setRuntimeError] = useState<string | null>(null);
   sceneRef.current = sceneId;
   paletteRef.current = palette;
   settingsRef.current = settings;
@@ -39,11 +40,13 @@ function VisualizerCanvas({ engine, palette, settings, sceneId, seed, profileRat
     if (!canvas) return undefined;
     const runtime = new CanvasRuntime({
       canvas,
+      registry: SCENE_REGISTRY,
       getFrame: () => engine.getFrame(),
       getSceneId: () => sceneRef.current,
       getSettings: () => settingsRef.current,
       getPalette: () => paletteRef.current,
       getSeed: () => seedRef.current,
+      onError: (error) => setRuntimeError(error.message),
     });
     runtime.start();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => runtime.resize());
@@ -57,6 +60,7 @@ function VisualizerCanvas({ engine, palette, settings, sceneId, seed, profileRat
   return (
     <div className="canvas-frame" style={{ aspectRatio: profileRatio }}>
       <canvas ref={canvasRef} aria-label="Live audio visualizer preview" />
+      {runtimeError && <div className="preview-runtime-error" role="alert">Preview unavailable: {runtimeError}</div>}
     </div>
   );
 }
@@ -97,7 +101,7 @@ function App() {
   const palette = PALETTES[paletteId];
   const profile = CANVAS_PROFILES[profileId];
   const activeSettings = sceneSettings[activeSceneId];
-  const activeModule = useMemo(() => SCENE_LIST.find((scene) => scene.manifest.id === activeSceneId) ?? SCENE_LIST[0], [activeSceneId]);
+  const activeModule = useMemo(() => SCENE_REGISTRY.require(activeSceneId), [activeSceneId]);
 
   useEffect(() => () => engine.dispose(), [engine]);
 
@@ -180,7 +184,7 @@ function App() {
 
           <SectionLabel>Scene modules</SectionLabel>
           <div className="scene-list">
-            {SCENE_LIST.map((scene) => (
+            {AVAILABLE_SCENE_LIST.map((scene) => (
               <button key={scene.manifest.id} type="button" className={`scene-card ${activeSceneId === scene.manifest.id ? 'active' : ''}`} onClick={() => setScene(scene.manifest.id)} aria-pressed={activeSceneId === scene.manifest.id}>
                 <span className="scene-icon" aria-hidden="true">{sceneIcon[scene.manifest.id]}</span>
                 <span className="scene-card-copy"><strong>{scene.manifest.name}</strong><small>{scene.manifest.description}</small></span>

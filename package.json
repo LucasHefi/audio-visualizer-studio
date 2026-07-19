@@ -9,7 +9,9 @@
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
     "test:watch": "vitest",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "preview:diagnostic": "node scripts/preview.mjs",
+    "probe:readiness": "node scripts/probe-readiness.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^4.3.4",
