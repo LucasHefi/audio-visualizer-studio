@@ -1,7 +1,7 @@
 import { clamp } from '../core/audioMath';
 import { SCENE_SETTINGS_SCHEMA } from '../core/settingsSchema';
 import { createSceneRegistry } from './moduleContract';
-import { MODULE_API_VERSION, type AudioFrame, type Palette, type SceneManifest, type SceneModule, type SceneSettings } from '../types';
+import { MODULE_API_VERSION, type AudioFrame, type ModuleLifecycle, type ModuleQuality, type Palette, type SceneManifest, type SceneModule, type SceneSettings } from '../types';
 
 const createManifest = (id: SceneManifest['id'], name: string, description: string, tags: readonly string[]): SceneManifest => ({
   id,
@@ -48,6 +48,138 @@ const paintBackground = (
   glow.addColorStop(1, hexToRgba(palette.background, 0));
   ctx.fillStyle = glow;
   ctx.fillRect(0, 0, width, height);
+};
+
+const ORBITAL_QUALITY_SCALE: Record<ModuleQuality, number> = { high: 1, balanced: 0.72, low: 0.45 };
+
+export type OrbitalParticleColor = 0 | 1 | 2;
+
+export interface OrbitalParticle {
+  orbit: number;
+  angle: number;
+  wobblePhase: number;
+  direction: -1 | 1;
+  baseSize: number;
+  colorIndex: OrbitalParticleColor;
+}
+
+export const getOrbitalParticleCount = (density: number, quality: ModuleQuality): number => {
+  const baseCount = Math.min(144, Math.max(28, Math.floor(28 + clamp(density) * 150)));
+  return Math.max(16, Math.floor(baseCount * ORBITAL_QUALITY_SCALE[quality]));
+};
+
+export const createOrbitalParticles = (seed: number, count: number): OrbitalParticle[] => Array.from({ length: Math.max(0, Math.floor(count)) }, (_, index) => ({
+  orbit: 0.5 + seeded(seed, index) * 1.2,
+  angle: seeded(seed + 7, index) * Math.PI * 2,
+  wobblePhase: seeded(seed + 19, index) * Math.PI * 2,
+  direction: index % 2 ? 1 : -1,
+  baseSize: 1.5 + seeded(seed + 11, index) * 3,
+  colorIndex: (index % 3) as OrbitalParticleColor,
+}));
+
+export class OrbitalParticleCache {
+  private seed: number | null = null;
+  private count = -1;
+  private particles: OrbitalParticle[] = [];
+
+  public get(seed: number, count: number): readonly OrbitalParticle[] {
+    if (seed !== this.seed || count !== this.count) {
+      this.seed = seed;
+      this.count = count;
+      this.particles = createOrbitalParticles(seed, count);
+    }
+    return this.particles;
+  }
+
+  public clear(): void {
+    this.seed = null;
+    this.count = -1;
+    this.particles = [];
+  }
+}
+
+const orbitalColors = (palette: Palette): readonly string[] => [palette.accent, palette.primary, palette.secondary];
+
+export const renderOrbitalFrame = (
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  frame: AudioFrame,
+  settings: SceneSettings,
+  palette: Palette,
+  elapsed: number,
+  particles: readonly OrbitalParticle[],
+  quality: ModuleQuality,
+  reducedMotion: boolean,
+): void => {
+  paintBackground(ctx, width, height, palette, 0.62 + settings.background * 0.5);
+  const centerX = width * 0.5;
+  const centerY = height * 0.52;
+  const radius = Math.min(width, height) * (0.12 + frame.bassEnergy * settings.energy * 0.18);
+  const motion = reducedMotion ? 0 : settings.motion;
+  const rotation = elapsed * 0.00018 * motion;
+  const sizeScale = 0.85 + frame.trebleEnergy * 1.4 * settings.sensitivity;
+  const shadowBlur = 12 * settings.glow * (quality === 'low' ? 0.55 : quality === 'balanced' ? 0.75 : 1);
+  const colors = orbitalColors(palette);
+
+  ctx.globalCompositeOperation = 'lighter';
+  for (let colorIndex = 0; colorIndex < colors.length; colorIndex += 1) {
+    const color = colors[colorIndex];
+    ctx.beginPath();
+    for (const particle of particles) {
+      if (particle.colorIndex !== colorIndex) continue;
+      const angle = particle.angle + rotation * particle.direction;
+      const wobble = reducedMotion
+        ? 0
+        : Math.sin(elapsed * 0.001 * motion + particle.wobblePhase) * radius * 0.12;
+      const x = centerX + Math.cos(angle) * radius * particle.orbit + wobble;
+      const y = centerY + Math.sin(angle) * radius * particle.orbit * 0.72;
+      const size = particle.baseSize * sizeScale;
+      ctx.moveTo(x + size, y);
+      ctx.arc(x, y, size, 0, Math.PI * 2);
+    }
+    ctx.fillStyle = color;
+    ctx.shadowBlur = shadowBlur;
+    ctx.shadowColor = color;
+    ctx.fill();
+  }
+
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = hexToRgba(palette.primary, 0.16 + frame.beatPulse * 0.4);
+  ctx.lineWidth = Math.max(1, width / 480);
+  const ringCount = quality === 'high' ? 4 : quality === 'balanced' ? 3 : 2;
+  for (let ring = 1; ring <= ringCount; ring += 1) {
+    ctx.beginPath();
+    ctx.ellipse(centerX, centerY, radius * ring * 0.55, radius * ring * 0.36, rotation * ring, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+};
+
+export const createOrbitalLifecycle = (): ModuleLifecycle => {
+  const cache = new OrbitalParticleCache();
+  let destroyed = false;
+  let quality: ModuleQuality = 'high';
+  let reducedMotion = false;
+
+  const assertAlive = () => {
+    if (destroyed) throw new Error('Orbital module was updated after destroy.');
+  };
+
+  return {
+    update: (input) => {
+      assertAlive();
+      const effectiveReducedMotion = reducedMotion || input.reducedMotion;
+      const effectiveSettings = effectiveReducedMotion ? { ...input.settings, motion: 0 } : input.settings;
+      const effectiveQuality = input.quality ?? quality;
+      const particles = cache.get(input.seed, getOrbitalParticleCount(effectiveSettings.density, effectiveQuality));
+      renderOrbitalFrame(input.ctx, input.width, input.height, input.frame, effectiveSettings, input.palette, input.elapsed, particles, effectiveQuality, effectiveReducedMotion);
+    },
+    resize: () => assertAlive(),
+    setQuality: (nextQuality) => { assertAlive(); quality = nextQuality; },
+    setReducedMotion: (enabled) => { assertAlive(); reducedMotion = enabled; },
+    destroy: () => { destroyed = true; cache.clear(); },
+  };
 };
 
 const spectrum: SceneModule = {
@@ -129,37 +261,10 @@ const orbital: SceneModule = {
   manifest: createManifest('orbital', 'Orbital', 'Layered particles and rings expanding with low frequencies.', ['particles', 'orbit', 'depth']),
   defaults: { energy: 0.7, sensitivity: 0.62, motion: 0.62, density: 0.7, glow: 0.78, background: 0.28 },
   render: (ctx, width, height, frame, settings, palette, elapsed, seed) => {
-    paintBackground(ctx, width, height, palette, 0.62 + settings.background * 0.5);
-    const centerX = width * 0.5;
-    const centerY = height * 0.52;
-    const radius = Math.min(width, height) * (0.12 + frame.bassEnergy * settings.energy * 0.18);
-    const count = Math.max(28, Math.floor(28 + settings.density * 150));
-    const rotation = elapsed * 0.00018 * settings.motion;
-    ctx.globalCompositeOperation = 'lighter';
-    for (let index = 0; index < count; index += 1) {
-      const orbit = 0.5 + seeded(seed, index) * 1.2;
-      const angle = seeded(seed + 7, index) * Math.PI * 2 + rotation * (index % 2 ? 1 : -1);
-      const wobble = Math.sin(elapsed * 0.001 * settings.motion + index) * radius * 0.12;
-      const x = centerX + Math.cos(angle) * radius * orbit + wobble;
-      const y = centerY + Math.sin(angle) * radius * orbit * 0.72;
-      const size = 1.5 + seeded(seed + 11, index) * (3 + frame.trebleEnergy * 7 * settings.sensitivity);
-      ctx.fillStyle = index % 3 === 0 ? palette.accent : index % 2 === 0 ? palette.primary : palette.secondary;
-      ctx.shadowBlur = 12 * settings.glow;
-      ctx.shadowColor = ctx.fillStyle;
-      ctx.beginPath();
-      ctx.arc(x, y, size, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    ctx.shadowBlur = 0;
-    ctx.strokeStyle = hexToRgba(palette.primary, 0.16 + frame.beatPulse * 0.4);
-    ctx.lineWidth = Math.max(1, width / 480);
-    for (let ring = 1; ring <= 4; ring += 1) {
-      ctx.beginPath();
-      ctx.ellipse(centerX, centerY, radius * ring * 0.55, radius * ring * 0.36, rotation * ring, 0, Math.PI * 2);
-      ctx.stroke();
-    }
-    ctx.globalCompositeOperation = 'source-over';
+    const cache = new OrbitalParticleCache();
+    renderOrbitalFrame(ctx, width, height, frame, settings, palette, elapsed, cache.get(seed, getOrbitalParticleCount(settings.density, 'high')), 'high', false);
   },
+  create: () => createOrbitalLifecycle(),
 };
 
 const fluidGlow: SceneModule = {

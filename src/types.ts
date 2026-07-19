@@ -2,7 +2,18 @@ export const MODULE_API_VERSION = 1 as const;
 
 export type SceneId = 'spectrum' | 'waveform' | 'orbital' | 'fluid-glow';
 export type PaletteId = 'aurora' | 'ember' | 'mono' | 'ocean';
-export type CanvasProfileId = 'wide' | 'vertical' | 'feed' | '18-9';
+export type CanvasProfileId =
+  | 'youtube-landscape'
+  | 'youtube-portrait'
+  | 'tiktok-portrait'
+  | 'tiktok-landscape'
+  | 'instagram-portrait'
+  | 'instagram-square'
+  | 'instagram-landscape'
+  | 'custom-18-9';
+export type LegacyCanvasProfileId = 'wide' | 'vertical' | 'feed' | '18-9';
+export type CanvasPlatform = 'YouTube' | 'TikTok' | 'Instagram' | 'Custom';
+export type CanvasOrientation = 'landscape' | 'portrait' | 'square';
 export type ModuleCapability = 'audio-frame' | 'canvas' | 'settings';
 export type EntitlementTier = 'core' | 'free' | 'paid';
 export type ModuleQuality = 'high' | 'balanced' | 'low';
@@ -46,7 +57,13 @@ export interface Palette {
 export interface CanvasProfile {
   id: CanvasProfileId;
   name: string;
+  platform: CanvasPlatform;
+  orientation: CanvasOrientation;
+  orientationLabel: string;
+  ratioLabel: string;
   ratio: number;
+  width: number;
+  height: number;
   resolution: string;
 }
 

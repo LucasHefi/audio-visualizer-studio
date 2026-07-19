@@ -1,14 +1,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { DEFAULT_CANVAS_PROFILE_ID, normalizeCanvasProfileId } from './catalog';
 import { migrateSettings, sanitizeSettings, settingsSchemaToDefaults, SCENE_SETTINGS_SCHEMA } from './settingsSchema';
-import type { CanvasProfileId, PaletteId, SceneId, SceneSettings, StoredProjectState } from '../types';
+import type { CanvasProfileId, LegacyCanvasProfileId, PaletteId, SceneId, SceneSettings, StoredProjectState } from '../types';
 
 export const DEFAULT_SCENE_SETTINGS: SceneSettings = settingsSchemaToDefaults(SCENE_SETTINGS_SCHEMA) as unknown as SceneSettings;
 
 const sceneIds: SceneId[] = ['spectrum', 'waveform', 'orbital', 'fluid-glow'];
 const paletteIds: PaletteId[] = ['aurora', 'ember', 'mono', 'ocean'];
-const profileIds: CanvasProfileId[] = ['wide', 'vertical', 'feed', '18-9'];
-
 const defaultSettings = (): Record<SceneId, SceneSettings> =>
   Object.fromEntries(sceneIds.map((id) => [id, { ...DEFAULT_SCENE_SETTINGS }])) as Record<SceneId, SceneSettings>;
 
@@ -17,7 +16,7 @@ const DEFAULT_PROJECT: StoredProjectState = {
   activeSceneId: 'spectrum',
   sceneSettings: defaultSettings(),
   paletteId: 'aurora',
-  profileId: 'wide',
+  profileId: DEFAULT_CANVAS_PROFILE_ID,
   seed: 1407,
 };
 
@@ -37,7 +36,7 @@ export const migrateProject = (persisted: unknown, version = 1): StoredProjectSt
     activeSceneId: sceneIds.includes(candidate.activeSceneId as SceneId) ? (candidate.activeSceneId as SceneId) : DEFAULT_PROJECT.activeSceneId,
     sceneSettings,
     paletteId: paletteIds.includes(candidate.paletteId as PaletteId) ? (candidate.paletteId as PaletteId) : DEFAULT_PROJECT.paletteId,
-    profileId: profileIds.includes(candidate.profileId as CanvasProfileId) ? (candidate.profileId as CanvasProfileId) : DEFAULT_PROJECT.profileId,
+    profileId: normalizeCanvasProfileId(candidate.profileId),
     seed: typeof candidate.seed === 'number' && Number.isFinite(candidate.seed) ? candidate.seed : DEFAULT_PROJECT.seed,
   };
 };
@@ -47,7 +46,7 @@ interface ProjectStore extends StoredProjectState {
   setSceneSetting: (key: keyof SceneSettings, value: number) => void;
   resetScene: () => void;
   setPalette: (paletteId: PaletteId) => void;
-  setProfile: (profileId: CanvasProfileId) => void;
+  setProfile: (profileId: CanvasProfileId | LegacyCanvasProfileId) => void;
   setProjectName: (projectName: string) => void;
 }
 
@@ -74,12 +73,12 @@ export const useProjectStore = create<ProjectStore>()(
           },
         })),
       setPalette: (paletteId) => set({ paletteId }),
-      setProfile: (profileId) => set({ profileId }),
+      setProfile: (profileId) => set({ profileId: normalizeCanvasProfileId(profileId) }),
       setProjectName: (projectName) => set({ projectName }),
     }),
     {
       name: 'audio-visualizer-project',
-      version: 2,
+      version: 3,
       migrate: (persistedState, version) => migrateProject(persistedState, version),
       partialize: (state) => ({
         projectName: state.projectName,

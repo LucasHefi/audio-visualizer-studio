@@ -1,4 +1,4 @@
-import type { CanvasProfile, Palette, PaletteId, CanvasProfileId } from '../types';
+import type { CanvasPlatform, CanvasProfile, CanvasProfileId, CanvasOrientation, LegacyCanvasProfileId, Palette, PaletteId } from '../types';
 
 export const PALETTES: Record<PaletteId, Palette> = {
   aurora: {
@@ -18,10 +18,41 @@ export const PALETTES: Record<PaletteId, Palette> = {
 export const PALETTE_LIST = Object.values(PALETTES);
 
 export const CANVAS_PROFILES: Record<CanvasProfileId, CanvasProfile> = {
-  wide: { id: 'wide', name: 'Wide', ratio: 16 / 9, resolution: '1920 × 1080' },
-  vertical: { id: 'vertical', name: 'Vertical', ratio: 9 / 16, resolution: '1080 × 1920' },
-  feed: { id: 'feed', name: 'Feed', ratio: 1, resolution: '1080 × 1080' },
-  '18-9': { id: '18-9', name: '18:9', ratio: 18 / 9, resolution: '2160 × 1080' },
+  'youtube-landscape': { id: 'youtube-landscape', name: 'YouTube Landscape', platform: 'YouTube', orientation: 'landscape', orientationLabel: 'Landscape', ratioLabel: '16:9', ratio: 16 / 9, width: 1920, height: 1080, resolution: '1920 × 1080' },
+  'youtube-portrait': { id: 'youtube-portrait', name: 'YouTube Shorts', platform: 'YouTube', orientation: 'portrait', orientationLabel: 'Portrait', ratioLabel: '9:16', ratio: 9 / 16, width: 1080, height: 1920, resolution: '1080 × 1920' },
+  'tiktok-portrait': { id: 'tiktok-portrait', name: 'TikTok Portrait', platform: 'TikTok', orientation: 'portrait', orientationLabel: 'Portrait', ratioLabel: '9:16', ratio: 9 / 16, width: 1080, height: 1920, resolution: '1080 × 1920' },
+  'tiktok-landscape': { id: 'tiktok-landscape', name: 'TikTok Landscape', platform: 'TikTok', orientation: 'landscape', orientationLabel: 'Landscape', ratioLabel: '16:9', ratio: 16 / 9, width: 1920, height: 1080, resolution: '1920 × 1080' },
+  'instagram-portrait': { id: 'instagram-portrait', name: 'Instagram Portrait', platform: 'Instagram', orientation: 'portrait', orientationLabel: 'Portrait', ratioLabel: '4:5', ratio: 4 / 5, width: 1080, height: 1350, resolution: '1080 × 1350' },
+  'instagram-square': { id: 'instagram-square', name: 'Instagram Square', platform: 'Instagram', orientation: 'square', orientationLabel: 'Square', ratioLabel: '1:1', ratio: 1, width: 1080, height: 1080, resolution: '1080 × 1080' },
+  'instagram-landscape': { id: 'instagram-landscape', name: 'Instagram Landscape', platform: 'Instagram', orientation: 'landscape', orientationLabel: 'Landscape', ratioLabel: '1.91:1', ratio: 1.91, width: 1080, height: 566, resolution: '1080 × 566' },
+  'custom-18-9': { id: 'custom-18-9', name: 'Custom 18:9', platform: 'Custom', orientation: 'landscape', orientationLabel: 'Landscape', ratioLabel: '18:9', ratio: 18 / 9, width: 2160, height: 1080, resolution: '2160 × 1080' },
 };
 
 export const PROFILE_LIST = Object.values(CANVAS_PROFILES);
+
+export const DEFAULT_CANVAS_PROFILE_ID: CanvasProfileId = 'youtube-landscape';
+export const PROFILE_PLATFORM_ORDER: CanvasPlatform[] = ['YouTube', 'TikTok', 'Instagram', 'Custom'];
+export const PROFILE_GROUPS = PROFILE_PLATFORM_ORDER.map((platform) => ({
+  platform,
+  profiles: PROFILE_LIST.filter((profile) => profile.platform === platform),
+}));
+
+export const LEGACY_PROFILE_MIGRATIONS: Record<LegacyCanvasProfileId, CanvasProfileId> = {
+  wide: 'youtube-landscape',
+  vertical: 'youtube-portrait',
+  feed: 'instagram-square',
+  '18-9': 'custom-18-9',
+};
+
+export const normalizeCanvasProfileId = (value: unknown): CanvasProfileId => {
+  if (typeof value !== 'string') return DEFAULT_CANVAS_PROFILE_ID;
+  if (value in CANVAS_PROFILES) return value as CanvasProfileId;
+  if (value in LEGACY_PROFILE_MIGRATIONS) return LEGACY_PROFILE_MIGRATIONS[value as LegacyCanvasProfileId];
+  return DEFAULT_CANVAS_PROFILE_ID;
+};
+
+export const canvasOrientationLabel: Record<CanvasOrientation, string> = {
+  landscape: 'Landscape',
+  portrait: 'Portrait',
+  square: 'Square',
+};
