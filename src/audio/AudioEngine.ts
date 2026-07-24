@@ -108,10 +108,21 @@ export class AudioEngine {
     this.audio.removeAttribute('src');
     this.audio.load();
     if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
-    this.audioContext?.close().catch(() => undefined);
     this.source?.disconnect();
     this.analyser?.disconnect();
+    void this.audioContext?.close().catch(() => undefined);
     this.objectUrl = null;
+    this.source = null;
+    this.analyser = null;
+    this.audioContext = null;
+    this.frequencyData = new Uint8Array(256);
+    this.waveformData = new Uint8Array(256).fill(128);
+    this.previousVolume = 0;
+    this.setState({ status: 'empty', name: '', duration: 0, currentTime: 0, error: undefined });
+  }
+
+  public reset(): void {
+    this.dispose();
   }
 
   private async ensureGraph(): Promise<void> {

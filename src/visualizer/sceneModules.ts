@@ -1,12 +1,14 @@
 import { clamp } from '../core/audioMath';
 import { SCENE_SETTINGS_SCHEMA } from '../core/settingsSchema';
 import { createSceneRegistry } from './moduleContract';
-import { MODULE_API_VERSION, type AudioFrame, type ModuleLifecycle, type ModuleQuality, type Palette, type SceneManifest, type SceneModule, type SceneSettings } from '../types';
+import { MODULE_API_VERSION, type AudioFrame, type Canvas2DRenderingContext, type Canvas2DSceneModule, type ModuleLifecycle, type ModuleQuality, type Palette, type SceneManifest, type SceneModule, type SceneSettings } from '../types';
+import { cosmicKaleidoscope } from './scenes/cosmicKaleidoscope';
 
-const createManifest = (id: SceneManifest['id'], name: string, description: string, tags: readonly string[]): SceneManifest => ({
+const createManifest = (id: SceneManifest['id'], name: string, description: string, tags: readonly string[]): SceneManifest & { backend: 'canvas2d' } => ({
   id,
   kind: 'visualizer',
   apiVersion: MODULE_API_VERSION,
+  backend: 'canvas2d',
   version: '1.0.0',
   name,
   description,
@@ -34,7 +36,7 @@ const seeded = (seed: number, index: number): number => {
 };
 
 const paintBackground = (
-  ctx: CanvasRenderingContext2D,
+  ctx: Canvas2DRenderingContext,
   width: number,
   height: number,
   palette: Palette,
@@ -101,7 +103,7 @@ export class OrbitalParticleCache {
 const orbitalColors = (palette: Palette): readonly string[] => [palette.accent, palette.primary, palette.secondary];
 
 export const renderOrbitalFrame = (
-  ctx: CanvasRenderingContext2D,
+  ctx: Canvas2DRenderingContext,
   width: number,
   height: number,
   frame: AudioFrame,
@@ -219,6 +221,179 @@ const spectrum: SceneModule = {
   },
 };
 
+export interface GhostTrailSegment {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  alpha: number;
+}
+
+export interface PerspectiveSpectrumPoint {
+  x: number;
+  y: number;
+  height: number;
+  energy: number;
+}
+
+export interface ThreeDSpectrumGeometry {
+  leftWall: readonly PerspectiveSpectrumPoint[];
+  rightWall: readonly PerspectiveSpectrumPoint[];
+  ceiling: readonly PerspectiveSpectrumPoint[];
+  floor: readonly PerspectiveSpectrumPoint[];
+  rearWall: readonly PerspectiveSpectrumPoint[];
+}
+
+export const createGhostTrailSegments = ({
+  x,
+  y,
+  height,
+  direction,
+  count = 100,
+  spacing = 5,
+}: {
+  x: number;
+  y: number;
+  height: number;
+  direction: -1 | 1;
+  count?: number;
+  spacing?: number;
+}): readonly GhostTrailSegment[] => Array.from({ length: Math.max(0, Math.floor(count)) }, (_, index) => ({
+  x,
+  y: y + direction * index * spacing,
+  width: 2,
+  height: Math.max(2, height),
+  alpha: Math.max(0.04, 0.88 * (1 - index / Math.max(1, count))),
+}));
+
+const getSpectrumBarCount = (width: number, settings: SceneSettings): number => Math.max(18, Math.min(96, Math.floor(24 + settings.density * Math.min(72, width / 16))));
+const getSpectrumEnergy = (frame: AudioFrame, index: number, count: number, settings: SceneSettings): number => {
+  const bin = Math.floor((index / count) * frame.frequencyBins.length * 0.92);
+  return clamp(((frame.frequencyBins[bin] ?? 0) / 255) * settings.sensitivity * 1.5 + frame.beatPulse * settings.motion * 0.22);
+};
+
+export const create3DSpectrumGeometry = (width: number, height: number, frame: AudioFrame, settings: SceneSettings): ThreeDSpectrumGeometry => {
+  const count = getSpectrumBarCount(width, settings);
+  const horizon = height * 0.34;
+  const floorDepth = height * 0.56;
+  const rearLeft = width * 0.38;
+  const frontLeft = width * 0.08;
+  const wallSpan = rearLeft - frontLeft;
+  const rearBottom = height * 0.62;
+  const rearWidth = width * 0.24;
+  const maxHeight = height * (0.08 + settings.energy * 0.28);
+  const energies = Array.from({ length: count }, (_, index) => getSpectrumEnergy(frame, index, count, settings));
+  const leftWall = energies.map((energy, index) => {
+    const progress = index / Math.max(1, count - 1);
+    return { x: rearLeft - progress * wallSpan, y: horizon + progress * floorDepth * 0.68, height: Math.max(4, energy * maxHeight), energy };
+  });
+  const rightWall = leftWall.map((point) => ({ ...point, x: width - point.x }));
+  const ceiling = leftWall.flatMap((point, index) => [
+    { ...point, y: horizon - point.height * 0.72 - index * height * 0.0008 },
+    { ...point, x: width - point.x, y: horizon - point.height * 0.72 - index * height * 0.0008 },
+  ]);
+  const floor = energies.map((energy, index) => {
+    const progress = index / Math.max(1, count - 1);
+    return { x: width * 0.5 + (progress - 0.5) * width * 0.82, y: rearBottom + progress * (height - rearBottom) * 0.94, height: Math.max(3, energy * maxHeight * 0.8), energy };
+  });
+  const rearWall = energies.map((energy, index) => ({
+    x: width * 0.5 - rearWidth * 0.5 + (index / Math.max(1, count - 1)) * rearWidth,
+    y: rearBottom,
+    height: Math.max(3, energy * maxHeight * 0.9),
+    energy,
+  }));
+  return { leftWall, rightWall, ceiling, floor, rearWall };
+};
+
+export const render3DSpectrumFrame = (
+  ctx: Canvas2DRenderingContext,
+  width: number,
+  height: number,
+  frame: AudioFrame,
+  settings: SceneSettings,
+  palette: Palette,
+  elapsed: number,
+  _seed: number,
+  reducedMotion = false,
+): void => {
+  paintBackground(ctx, width, height, palette, 0.74 + settings.background * 0.36);
+  const geometry = create3DSpectrumGeometry(width, height, frame, settings);
+  const horizon = height * 0.34;
+  const rearBottom = height * 0.62;
+  const motion = reducedMotion ? 0 : settings.motion;
+  const perspectiveGlow = 10 * settings.glow;
+  const drawGridLine = (fromX: number, fromY: number, toX: number, toY: number, alpha: number) => {
+    ctx.strokeStyle = hexToRgba(palette.secondary, alpha);
+    ctx.lineWidth = Math.max(1, width / 900);
+    ctx.beginPath();
+    ctx.moveTo(fromX, fromY);
+    ctx.lineTo(toX, toY);
+    ctx.stroke();
+  };
+
+  ctx.globalAlpha = 0.7;
+  for (let line = 0; line < 7; line += 1) {
+    const progress = line / 6;
+    drawGridLine(width * 0.5, rearBottom, width * (0.08 + progress * 0.84), height * (0.93 - progress * 0.2), 0.18);
+    drawGridLine(width * 0.5, rearBottom, width * (0.92 - progress * 0.84), height * (0.93 - progress * 0.2), 0.18);
+  }
+  drawGridLine(width * 0.08, height * 0.93, width * 0.5, rearBottom, 0.24);
+  drawGridLine(width * 0.92, height * 0.93, width * 0.5, rearBottom, 0.24);
+  ctx.globalAlpha = 1;
+
+  const drawPoint = (point: PerspectiveSpectrumPoint, color: string) => {
+    const barHeight = point.height * (0.92 + Math.sin(elapsed * 0.001 * motion + point.x * 0.012) * 0.04);
+    ctx.fillStyle = color;
+    ctx.shadowBlur = perspectiveGlow;
+    ctx.shadowColor = color;
+    ctx.fillRect(point.x - 1, point.y - barHeight, 2, barHeight);
+  };
+  const drawGhostTrailBatch = (points: readonly PerspectiveSpectrumPoint[], color: string, direction: -1 | 1) => {
+    const trailCount = 100;
+    ctx.save();
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 2;
+    for (let index = 0; index < trailCount; index += 1) {
+      ctx.beginPath();
+      for (const point of points) {
+        const barHeight = point.height * (0.92 + Math.sin(elapsed * 0.001 * motion + point.x * 0.012) * 0.04);
+        const y = point.y - barHeight + direction * index * 5;
+        ctx.moveTo(point.x - 1, y);
+        ctx.lineTo(point.x + 1, y);
+      }
+      ctx.strokeStyle = hexToRgba(color, Math.max(0.025, 0.22 * (1 - index / trailCount)));
+      ctx.stroke();
+    }
+    ctx.restore();
+  };
+  geometry.leftWall.forEach((point, index) => drawPoint(point, index % 2 ? palette.primary : palette.secondary));
+  geometry.rightWall.forEach((point, index) => drawPoint(point, index % 2 ? palette.primary : palette.accent));
+  geometry.rearWall.forEach((point, index) => drawPoint(point, index % 2 ? palette.primary : palette.accent));
+  geometry.floor.forEach((point, index) => drawPoint(point, index % 2 ? palette.secondary : palette.primary));
+  drawGhostTrailBatch(geometry.leftWall, palette.secondary, -1);
+  drawGhostTrailBatch(geometry.rightWall, palette.accent, -1);
+
+  ctx.strokeStyle = hexToRgba(palette.accent, 0.42 + frame.beatPulse * 0.22);
+  ctx.lineWidth = Math.max(1, width / 640);
+  ctx.shadowBlur = 0;
+  ctx.beginPath();
+  ctx.moveTo(width * 0.08, horizon);
+  ctx.lineTo(width * 0.38, horizon);
+  ctx.lineTo(width * 0.62, horizon);
+  ctx.lineTo(width * 0.92, horizon);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.rect(width * 0.38, horizon, width * 0.24, rearBottom - horizon);
+  ctx.stroke();
+  ctx.globalCompositeOperation = 'source-over';
+};
+
+const threeDSpectrum: Canvas2DSceneModule = {
+  manifest: createManifest('3d-spectrum', '3D Spectrum', 'A room-perspective Spectrum with mirrored walls and fading Ghost trails.', ['3d', 'perspective', 'ghost', 'frequency']),
+  defaults: { energy: 0.72, sensitivity: 0.68, motion: 0.52, density: 0.58, glow: 0.7, background: 0.45 },
+  render: render3DSpectrumFrame,
+};
+
 const waveform: SceneModule = {
   manifest: createManifest('waveform', 'Waveform', 'A luminous ribbon with an organic audio contour.', ['wave', 'organic', 'line']),
   defaults: { energy: 0.76, sensitivity: 0.72, motion: 0.4, density: 0.5, glow: 0.82, background: 0.5 },
@@ -300,11 +475,98 @@ const fluidGlow: SceneModule = {
   },
 };
 
+export interface LayeredCirclePoint {
+  column: number;
+  depth: number;
+  x: number;
+  y: number;
+  radius: number;
+  energy: number;
+}
+
+export const createLayeredCircleStackGeometry = (
+  width: number,
+  height: number,
+  frame: AudioFrame,
+  settings: SceneSettings,
+  elapsed: number,
+  seed: number,
+  reducedMotion = false,
+): readonly LayeredCirclePoint[] => {
+  const columns = Math.max(5, Math.min(12, Math.floor(5 + settings.density * 8)));
+  const maxDepth = Math.max(4, Math.min(10, Math.floor(4 + settings.density * 8)));
+  const spacingX = width / (columns + 1);
+  const baseY = height * 0.86;
+  const baseRadius = Math.min(spacingX * 0.32, height * 0.045);
+  const motion = reducedMotion ? 0 : settings.motion;
+
+  return Array.from({ length: columns }, (_, column) => {
+    const bin = Math.floor((column / columns) * frame.frequencyBins.length * 0.92);
+    const spectral = (frame.frequencyBins[bin] ?? 0) / 255;
+    const energy = clamp((spectral * 0.68 + frame.bassEnergy * 0.32) * settings.sensitivity + frame.beatPulse * settings.energy * 0.24);
+    const stackCount = Math.max(2, Math.min(maxDepth, Math.round(2 + energy * (maxDepth - 2))));
+    const phase = seeded(seed, column) * Math.PI * 2;
+    const drift = Math.sin(elapsed * 0.001 * motion + phase) * spacingX * 0.06;
+
+    return Array.from({ length: stackCount }, (_, depth) => {
+      const progress = depth / Math.max(1, stackCount - 1);
+      const radius = baseRadius * (1 - progress * 0.18 + energy * 0.12);
+      return {
+        column,
+        depth,
+        x: spacingX * (column + 1) + drift,
+        y: baseY - depth * baseRadius * 1.62,
+        radius,
+        energy,
+      };
+    });
+  }).flat();
+};
+
+export const renderLayeredCirclesFrame = (
+  ctx: Canvas2DRenderingContext,
+  width: number,
+  height: number,
+  frame: AudioFrame,
+  settings: SceneSettings,
+  palette: Palette,
+  elapsed: number,
+  seed: number,
+  reducedMotion = false,
+): void => {
+  paintBackground(ctx, width, height, palette, 0.78 + settings.background * 0.42);
+  const geometry = createLayeredCircleStackGeometry(width, height, frame, settings, elapsed, seed, reducedMotion);
+  const colors = [palette.secondary, palette.primary, palette.accent, palette.muted, palette.surface];
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'screen';
+  for (const point of geometry) {
+    const progress = point.depth / 10;
+    const color = colors[(point.column + point.depth) % colors.length];
+    ctx.fillStyle = hexToRgba(color, 0.36 + point.energy * 0.24 + (1 - progress) * 0.12);
+    ctx.strokeStyle = hexToRgba(color, 0.66 + point.energy * 0.2);
+    ctx.lineWidth = Math.max(1, Math.min(width, height) / 420);
+    ctx.beginPath();
+    ctx.ellipse(point.x, point.y, point.radius, point.radius * (0.68 + settings.sensitivity * 0.14), 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+};
+
+const layeredCircles: SceneModule = {
+  manifest: createManifest('layered-circles', 'Layered Circles', 'Audio-reactive stacked circles inspired by the client reference.', ['layers', 'circles', 'reference']),
+  defaults: { energy: 0.68, sensitivity: 0.64, motion: 0.34, density: 0.54, glow: 0.66, background: 0.48 },
+  render: renderLayeredCirclesFrame,
+};
+
 export const SCENE_MODULES: Record<string, SceneModule> = {
   spectrum,
   waveform,
   orbital,
   'fluid-glow': fluidGlow,
+  'cosmic-kaleidoscope': cosmicKaleidoscope,
+  'layered-circles': layeredCircles,
 };
 
 export const SCENE_LIST = Object.values(SCENE_MODULES);

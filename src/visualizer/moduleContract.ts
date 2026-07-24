@@ -5,7 +5,14 @@ import {
   type ModuleLifecycle,
   type ModuleManifest,
   type ModuleQuality,
+  type ModuleCreateContext,
+  type RendererBackend,
+  type RendererModuleCreateContext,
   type SceneModule,
+  type Canvas2DModuleCreateContext,
+  type Canvas2DSceneModule,
+  type WebGL2ModuleCreateContext,
+  type WebGL2ModuleUpdateInput,
 } from '../types';
 
 export interface EntitlementProvider {
@@ -25,6 +32,18 @@ export class ModuleContractError extends Error {
   }
 }
 
+export class RendererBackendMismatchError extends ModuleContractError {
+  public readonly expected: RendererBackend;
+  public readonly actual: RendererBackend;
+
+  public constructor(moduleId: string, expected: RendererBackend, actual: RendererBackend) {
+    super(`Module ${moduleId} backend mismatch: expected ${expected}, received ${actual}.`);
+    this.name = 'RendererBackendMismatchError';
+    this.expected = expected;
+    this.actual = actual;
+  }
+}
+
 const isSemver = (value: string): boolean => /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(value);
 const VALID_ENTITLEMENTS: readonly EntitlementTier[] = ['core', 'free', 'paid'];
 const VALID_CAPABILITIES = new Set(['audio-frame', 'canvas', 'settings']);
@@ -34,6 +53,7 @@ export const validateModuleManifest = (manifest: ModuleManifest): void => {
   if (typeof manifest.id !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(manifest.id)) throw new ModuleContractError('Module manifest id must be kebab-case.');
   if (manifest.kind !== 'visualizer') throw new ModuleContractError(`Module ${manifest.id} has an unsupported kind.`);
   if (manifest.apiVersion !== MODULE_API_VERSION) throw new ModuleContractError(`Module ${manifest.id} requires unsupported API version ${String(manifest.apiVersion)}.`);
+  if (manifest.backend !== 'canvas2d' && manifest.backend !== 'webgl2') throw new ModuleContractError(`Module ${manifest.id} must declare a renderer backend.`);
   if (typeof manifest.version !== 'string' || !isSemver(manifest.version)) throw new ModuleContractError(`Module ${manifest.id} must use a semantic version.`);
   if (typeof manifest.name !== 'string' || typeof manifest.description !== 'string' || !manifest.name.trim() || !manifest.description.trim()) throw new ModuleContractError(`Module ${manifest.id} needs a name and description.`);
   if (!Array.isArray(manifest.capabilities) || !manifest.capabilities.length || manifest.capabilities.some((capability) => !VALID_CAPABILITIES.has(capability))) {
@@ -51,10 +71,17 @@ export const validateModuleManifest = (manifest: ModuleManifest): void => {
   }
 };
 
+const isCanvas2DModule = (module: SceneModule): module is Canvas2DSceneModule => module.manifest.backend === 'canvas2d';
+
 export const validateSceneModule = (module: SceneModule): void => {
   if (!module || typeof module !== 'object') throw new ModuleContractError('Scene module is required.');
   validateModuleManifest(module.manifest);
-  if (typeof module.render !== 'function') throw new ModuleContractError(`Module ${module.manifest.id} must provide a render function.`);
+  if (isCanvas2DModule(module) && typeof module.render !== 'function') {
+    throw new ModuleContractError(`Module ${module.manifest.id} must provide a Canvas2D render function.`);
+  }
+  if (!isCanvas2DModule(module) && typeof module.create !== 'function') {
+    throw new ModuleContractError(`Module ${module.manifest.id} must provide a WebGL2 create function.`);
+  }
   for (const [key, definition] of Object.entries(module.manifest.settingsSchema.fields)) {
     const value = module.defaults[key as keyof typeof module.defaults];
     if (typeof value !== 'number' || value < definition.min || value > definition.max) {
@@ -63,7 +90,7 @@ export const validateSceneModule = (module: SceneModule): void => {
   }
 };
 
-const createRenderLifecycle = (module: SceneModule): ModuleLifecycle => {
+const createRenderLifecycle = (module: Extract<SceneModule, { manifest: { backend: 'canvas2d' } }>): ModuleLifecycle => {
   let destroyed = false;
   let quality: ModuleQuality = 'high';
   let reducedMotion = false;
@@ -120,9 +147,30 @@ export class SceneModuleRegistry {
     return module;
   }
 
-  public create(id: string, context: Parameters<NonNullable<SceneModule['create']>>[0]): ModuleLifecycle {
+  public create(id: string, context: Canvas2DModuleCreateContext): ModuleLifecycle;
+  public create(id: string, context: WebGL2ModuleCreateContext): ModuleLifecycle<WebGL2ModuleUpdateInput>;
+  public create(id: string, context: ModuleCreateContext): ModuleLifecycle;
+  public create(id: string, context: RendererModuleCreateContext | ModuleCreateContext): ModuleLifecycle | ModuleLifecycle<WebGL2ModuleUpdateInput> {
     const module = this.require(id);
-    return module.create?.(context) ?? createRenderLifecycle(module);
+    const actualBackend: RendererBackend = 'backend' in context ? context.backend : 'canvas2d';
+    if (module.manifest.backend !== actualBackend) {
+      throw new RendererBackendMismatchError(module.manifest.id, module.manifest.backend, actualBackend);
+    }
+
+    if (isCanvas2DModule(module)) {
+      if ('backend' in context) {
+        if (context.backend !== 'canvas2d') {
+          throw new RendererBackendMismatchError(module.manifest.id, 'canvas2d', context.backend);
+        }
+        return module.create?.(context) ?? createRenderLifecycle(module);
+      }
+      return module.create?.({ backend: 'canvas2d', canvas: context.canvas, ctx: context.ctx }) ?? createRenderLifecycle(module);
+    }
+
+    if (!('gl' in context)) {
+      throw new RendererBackendMismatchError(module.manifest.id, 'webgl2', 'canvas2d');
+    }
+    return module.create(context);
   }
 }
 

@@ -2,13 +2,14 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { SCENE_SETTINGS_SCHEMA, migrateSettings, validateSettings } from '../core/settingsSchema';
-import type { ModuleLifecycle, ModuleManifest, SceneModule, SceneSettings } from '../types';
-import { ModuleContractError, SceneModuleRegistry } from './moduleContract';
+import type { Canvas2DSceneModule, ModuleLifecycle, ModuleManifest, SceneId, SceneManifest, SceneModule, SceneSettings, WebGL2ModuleCreateContext, WebGL2ModuleUpdateInput } from '../types';
+import { ModuleContractError, RendererBackendMismatchError, SceneModuleRegistry } from './moduleContract';
 
-const makeManifest = (id: string, entitlement: ModuleManifest['entitlement'] = 'core'): ModuleManifest => ({
+const makeManifest = (id: SceneId, entitlement: ModuleManifest['entitlement'] = 'core'): SceneManifest & { backend: 'canvas2d' } => ({
   id,
   kind: 'visualizer',
   apiVersion: 1,
+  backend: 'canvas2d',
   version: '1.0.0',
   name: id,
   description: 'test module',
@@ -18,8 +19,8 @@ const makeManifest = (id: string, entitlement: ModuleManifest['entitlement'] = '
   settingsSchema: SCENE_SETTINGS_SCHEMA,
 });
 
-const makeModule = (id: 'spectrum' | 'waveform', counters: { created: number; destroyed: number; updates: number }): SceneModule => ({
-  manifest: makeManifest(id) as SceneModule['manifest'],
+const makeModule = (id: 'spectrum' | 'waveform', counters: { created: number; destroyed: number; updates: number }): Canvas2DSceneModule => ({
+  manifest: makeManifest(id),
   defaults: { energy: 0.5, sensitivity: 0.5, motion: 0.5, density: 0.5, glow: 0.5, background: 0.5 },
   render: () => counters.updates += 1,
   create: () => {
@@ -38,7 +39,7 @@ const makeModule = (id: 'spectrum' | 'waveform', counters: { created: number; de
 
 describe('module contract and registry', () => {
   it('rejects unknown and unavailable modules instead of falling back', () => {
-    const paid = { ...makeModule('waveform', { created: 0, destroyed: 0, updates: 0 }), manifest: makeManifest('waveform', 'paid') as SceneModule['manifest'] };
+    const paid = { ...makeModule('waveform', { created: 0, destroyed: 0, updates: 0 }), manifest: makeManifest('waveform', 'paid') };
     const registry = new SceneModuleRegistry([makeModule('spectrum', { created: 0, destroyed: 0, updates: 0 }), paid]);
     expect(() => registry.require('missing')).toThrow(ModuleContractError);
     expect(() => registry.require('waveform')).toThrow('requires the paid entitlement');
@@ -46,8 +47,66 @@ describe('module contract and registry', () => {
   });
 
   it('rejects malformed manifests with a contract error', () => {
-    const malformed = { ...makeModule('spectrum', { created: 0, destroyed: 0, updates: 0 }), manifest: { ...makeManifest('spectrum'), settingsSchema: undefined } as unknown as SceneModule['manifest'] };
+    const malformed = { ...makeModule('spectrum', { created: 0, destroyed: 0, updates: 0 }), manifest: { ...makeManifest('spectrum'), settingsSchema: undefined } as unknown as Canvas2DSceneModule['manifest'] };
     expect(() => new SceneModuleRegistry([malformed])).toThrow(ModuleContractError);
+  });
+
+  it('requires an explicit backend instead of silently reinterpreting API version 1', () => {
+    const legacy = {
+      ...makeModule('spectrum', { created: 0, destroyed: 0, updates: 0 }),
+      manifest: { ...makeManifest('spectrum'), backend: undefined },
+    } as unknown as SceneModule;
+
+    expect(() => new SceneModuleRegistry([legacy])).toThrow('backend');
+  });
+
+  it('represents a WebGL2 module with a typed WebGL context and rejects a Canvas2D mismatch', () => {
+    let receivedGl: WebGL2RenderingContext | undefined;
+    const module: SceneModule = {
+      manifest: {
+        ...makeManifest('cosmic-kaleidoscope'),
+        id: 'cosmic-kaleidoscope',
+        backend: 'webgl2',
+      },
+      defaults: { energy: 0.5, sensitivity: 0.5, motion: 0.5, density: 0.5, glow: 0.5, background: 0.5 },
+      create: ({ backend, gl }: WebGL2ModuleCreateContext) => {
+        if (backend !== 'webgl2') throw new Error('unexpected backend');
+        receivedGl = gl;
+        const lifecycle: ModuleLifecycle<WebGL2ModuleUpdateInput> = {
+          update: (input) => input.gl.clear(input.gl.COLOR_BUFFER_BIT),
+          resize: () => undefined,
+          setQuality: () => undefined,
+          setReducedMotion: () => undefined,
+          destroy: () => undefined,
+        };
+        return lifecycle;
+      },
+    };
+    const registry = new SceneModuleRegistry([module]);
+    const canvas = {} as HTMLCanvasElement;
+    const gl = { COLOR_BUFFER_BIT: 0x4000, clear: () => undefined } as unknown as WebGL2RenderingContext;
+
+    expect(() => registry.create('cosmic-kaleidoscope', {
+      backend: 'canvas2d',
+      canvas,
+      ctx: {} as CanvasRenderingContext2D,
+    })).toThrow(RendererBackendMismatchError);
+
+    const lifecycle = registry.create('cosmic-kaleidoscope', { backend: 'webgl2', canvas, gl });
+    lifecycle.update({
+      backend: 'webgl2',
+      gl,
+      width: 640,
+      height: 360,
+      frame: { frequencyBins: [], waveform: [], bassEnergy: 0, midEnergy: 0, trebleEnergy: 0, volume: 0, beatPulse: 0 },
+      settings: { energy: 0.5, sensitivity: 0.5, motion: 0.5, density: 0.5, glow: 0.5, background: 0.5 },
+      palette: {} as never,
+      elapsed: 0,
+      seed: 1,
+      quality: 'high',
+      reducedMotion: false,
+    });
+    expect(receivedGl).toBe(gl);
   });
 
   it('keeps built-in module source free of forbidden app/runtime dependencies', () => {
@@ -84,7 +143,7 @@ describe('module contract and registry', () => {
   it('covers resize, quality, reduced-motion and destroy for the render adapter', () => {
     let renderedSettings: SceneSettings | undefined;
     const module: SceneModule = {
-      manifest: makeManifest('spectrum') as SceneModule['manifest'],
+      manifest: makeManifest('spectrum'),
       defaults: { energy: 0.5, sensitivity: 0.5, motion: 0.5, density: 0.5, glow: 0.5, background: 0.5 },
       render: (_ctx, _width, _height, _frame, settings) => { renderedSettings = settings; },
     };

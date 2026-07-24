@@ -92,7 +92,7 @@ export class CanvasRuntime {
     const sceneId = this.getSceneId();
     if (sceneId === this.activeModuleId && this.activeLifecycle) return;
     this.destroyActiveModule();
-    this.activeLifecycle = this.registry.create(sceneId, { canvas: this.canvas, ctx: this.context });
+    this.activeLifecycle = this.registry.create(sceneId, { backend: 'canvas2d', canvas: this.canvas, ctx: this.context });
     this.activeModuleId = sceneId;
     this.activeLifecycle.setQuality(this.quality);
     this.activeLifecycle.setReducedMotion(this.reducedMotion);

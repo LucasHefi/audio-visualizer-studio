@@ -11,6 +11,7 @@ const makeTestModule = (id: 'spectrum' | 'waveform', counters: { created: number
     id,
     kind: 'visualizer',
     apiVersion: 1,
+    backend: 'canvas2d',
     version: '1.0.0',
     name: id,
     description: 'runtime test module',
@@ -88,6 +89,63 @@ describe('CanvasRuntime lifecycle harness', () => {
     expect(second).toEqual({ created: 1, destroyed: 1 });
     expect(callbacks.size).toBe(0);
     expect(cancelCount).toBe(1);
+    vi.unstubAllGlobals();
+  });
+
+  it('reports an explicit backend mismatch instead of falling back to Canvas2D', () => {
+    const callbacks = new Map<number, FrameRequestCallback>();
+    vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+      const handle = callbacks.size + 1;
+      callbacks.set(handle, callback);
+      return handle;
+    });
+    const webglModule: SceneModule = {
+      manifest: {
+        id: 'cosmic-kaleidoscope',
+        kind: 'visualizer',
+        apiVersion: 1,
+        backend: 'webgl2',
+        version: '1.0.0',
+        name: 'Cosmic Kaleidoscope',
+        description: 'WebGL2 test module',
+        tags: ['test'],
+        capabilities: ['audio-frame', 'canvas', 'settings'],
+        entitlement: 'core',
+        settingsSchema: SCENE_SETTINGS_SCHEMA,
+      },
+      defaults: { energy: 0.5, sensitivity: 0.5, motion: 0.5, density: 0.5, glow: 0.5, background: 0.5 },
+      create: () => ({
+        update: () => undefined,
+        resize: () => undefined,
+        setQuality: () => undefined,
+        setReducedMotion: () => undefined,
+        destroy: () => undefined,
+      }),
+    };
+    const registry = new SceneModuleRegistry([webglModule]);
+    const canvas = {
+      width: 0,
+      height: 0,
+      getContext: () => ({ setTransform: vi.fn() }),
+      getBoundingClientRect: () => ({ width: 640, height: 360 }),
+    } as unknown as HTMLCanvasElement;
+    const onError = vi.fn();
+    const runtime = new CanvasRuntime({
+      canvas,
+      registry,
+      getFrame: () => createSilentFrame(),
+      getSceneId: () => 'cosmic-kaleidoscope',
+      getSettings: () => ({ energy: 0.5, sensitivity: 0.5, motion: 0.5, density: 0.5, glow: 0.5, background: 0.5 }),
+      getPalette: () => PALETTES.aurora,
+      getSeed: () => 1,
+      onError,
+    });
+
+    runtime.start();
+
+    expect(onError).toHaveBeenCalledOnce();
+    expect(onError.mock.calls[0][0].message).toMatch(/backend mismatch/i);
+    expect(callbacks.size).toBe(0);
     vi.unstubAllGlobals();
   });
 });

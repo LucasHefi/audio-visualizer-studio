@@ -13,6 +13,15 @@ export const PALETTES: Record<PaletteId, Palette> = {
   ocean: {
     id: 'ocean', name: 'Deep ocean', description: 'Blue depth with a violet edge', background: '#080f22', surface: '#16254a', primary: '#7dd3fc', secondary: '#818cf8', accent: '#c4b5fd', muted: '#8194b8',
   },
+  ruby: {
+    id: 'ruby', name: 'Ruby', description: 'Ruby red, rose pink and ink', background: '#16070d', surface: '#3b101e', primary: '#e11d48', secondary: '#fb7185', accent: '#f9a8d4', muted: '#c08497',
+  },
+  emerald: {
+    id: 'emerald', name: 'Emerald', description: 'Emerald green with deep teal', background: '#061713', surface: '#0f3a2d', primary: '#34d399', secondary: '#10b981', accent: '#a7f3d0', muted: '#6cae99',
+  },
+  'ice-cold': {
+    id: 'ice-cold', name: 'Ice cold', description: 'Arctic blue, white and violet', background: '#07111f', surface: '#16304b', primary: '#bae6fd', secondary: '#38bdf8', accent: '#e0e7ff', muted: '#8aa7bd',
+  },
 };
 
 export const PALETTE_LIST = Object.values(PALETTES);

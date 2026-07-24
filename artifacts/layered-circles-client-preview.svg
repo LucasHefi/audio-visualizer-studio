@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Layered Circles — client preview</title>
+  <desc id="desc">Red and rose pink audio-reactive stacks of circles growing upward from a shared baseline.</desc>
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="35%" r="80%"><stop offset="0" stop-color="#3b101e" stop-opacity=".82"/><stop offset=".58" stop-color="#16070d" stop-opacity=".98"/><stop offset="1" stop-color="#09070c"/></radialGradient>
+    <filter id="glow" x="-80%" y="-80%" width="260%" height="260%"><feGaussianBlur stdDeviation="7" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+  <rect width="1280" height="720" fill="#09070c"/>
+  <rect x="24" y="24" width="1232" height="672" rx="28" fill="url(#bg)" stroke="#c08497" stroke-opacity=".28"/>
+  <path d="M90 612 H1190" stroke="#fb7185" stroke-opacity=".2"/>
+  <g fill="none" stroke-linecap="round" filter="url(#glow)">
+    <g stroke="#f9a8d4" fill="#f9a8d4" fill-opacity=".26">
+      <ellipse cx="150" cy="602" rx="34" ry="22"/><ellipse cx="150" cy="552" rx="32" ry="21"/>
+      <ellipse cx="150" cy="503" rx="29" ry="19"/>
+    </g>
+    <g stroke="#fb7185" fill="#fb7185" fill-opacity=".28">
+      <ellipse cx="286" cy="602" rx="36" ry="23"/><ellipse cx="286" cy="550" rx="34" ry="22"/><ellipse cx="286" cy="500" rx="31" ry="20"/><ellipse cx="286" cy="454" rx="28" ry="18"/>
+    </g>
+    <g stroke="#e11d48" fill="#e11d48" fill-opacity=".3">
+      <ellipse cx="422" cy="602" rx="37" ry="24"/><ellipse cx="422" cy="548" rx="35" ry="22"/><ellipse cx="422" cy="496" rx="32" ry="21"/><ellipse cx="422" cy="448" rx="29" ry="19"/><ellipse cx="422" cy="404" rx="26" ry="17"/><ellipse cx="422" cy="365" rx="23" ry="15"/>
+    </g>
+    <g stroke="#f9a8d4" fill="#f9a8d4" fill-opacity=".28">
+      <ellipse cx="558" cy="602" rx="36" ry="23"/><ellipse cx="558" cy="550" rx="34" ry="22"/><ellipse cx="558" cy="500" rx="31" ry="20"/><ellipse cx="558" cy="454" rx="28" ry="18"/>
+    </g>
+    <g stroke="#fb7185" fill="#fb7185" fill-opacity=".3">
+      <ellipse cx="694" cy="602" rx="37" ry="24"/><ellipse cx="694" cy="548" rx="35" ry="22"/><ellipse cx="694" cy="496" rx="32" ry="21"/><ellipse cx="694" cy="448" rx="29" ry="19"/><ellipse cx="694" cy="404" rx="26" ry="17"/><ellipse cx="694" cy="365" rx="23" ry="15"/><ellipse cx="694" cy="331" rx="20" ry="13"/>
+    </g>
+    <g stroke="#e11d48" fill="#e11d48" fill-opacity=".28">
+      <ellipse cx="830" cy="602" rx="35" ry="23"/><ellipse cx="830" cy="550" rx="33" ry="21"/><ellipse cx="830" cy="500" rx="30" ry="19"/><ellipse cx="830" cy="455" rx="27" ry="18"/><ellipse cx="830" cy="414" rx="24" ry="16"/>
+    </g>
+    <g stroke="#f9a8d4" fill="#f9a8d4" fill-opacity=".27">
+      <ellipse cx="966" cy="602" rx="35" ry="23"/><ellipse cx="966" cy="550" rx="33" ry="21"/><ellipse cx="966" cy="500" rx="30" ry="19"/>
+    </g>
+    <g stroke="#fb7185" fill="#fb7185" fill-opacity=".28">
+      <ellipse cx="1102" cy="602" rx="36" ry="23"/><ellipse cx="1102" cy="550" rx="34" ry="22"/><ellipse cx="1102" cy="500" rx="31" ry="20"/><ellipse cx="1102" cy="454" rx="28" ry="18"/><ellipse cx="1102" cy="414" rx="25" ry="16"/>
+    </g>
+  </g>
+  <text x="72" y="82" fill="#f9a8d4" font-family="monospace" font-size="16" letter-spacing="3">LAYERED CIRCLES / CLIENT PREVIEW</text>
+  <text x="72" y="111" fill="#c08497" font-family="sans-serif" font-size="15">spodní vrstva → hudbou rostoucí sloupce kruhů</text>
+  <text x="1208" y="652" text-anchor="end" fill="#c08497" font-family="monospace" font-size="13">RUBÍN · RED / ROSE</text>
+</svg>
