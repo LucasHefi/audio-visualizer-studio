@@ -41,3 +41,7 @@ scripts/tailscale-diagnostics.sh "https://<verified-hostname>:8443"
 ```
 
 `/health.json` and the readiness probe cover the application/serving layer only. They do not prove Tailscale reachability, ACL behavior, allowed-device browser behavior, or absence of public exposure. See `DEPLOYMENT_RUNBOOK.md` for restart, rollback, negative probes and the release matrix.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
