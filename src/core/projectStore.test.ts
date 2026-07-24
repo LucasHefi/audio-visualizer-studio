@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_SCENE_SETTINGS, DEFAULT_LAYER_ID, migrateProject, normalizeProjectState, randomizeSettings, useProjectStore } from './projectStore';
+import type { SceneSettings } from '../types';
 import { SCENE_MODULES } from '../visualizer/sceneModules';
 
 beforeEach(() => {
@@ -103,11 +104,13 @@ describe('project store', () => {
     const store = useProjectStore.getState();
     store.selectScene('layered-circles');
     store.toggleScene('layered-circles');
+    const spectrumBefore = useProjectStore.getState().visualLayers.find((candidate) => candidate.sceneId === 'spectrum')?.settings;
     store.setSceneSetting('energy', 0.02);
     store.randomizeScene();
     const layer = useProjectStore.getState().visualLayers.find((candidate) => candidate.sceneId === 'layered-circles');
     expect(layer?.settings.energy).toBeGreaterThanOrEqual(0);
     expect(layer?.settings.energy).toBeLessThanOrEqual(1);
+    expect(useProjectStore.getState().visualLayers.find((candidate) => candidate.sceneId === 'spectrum')?.settings).toEqual(spectrumBefore);
     store.resetScene();
     expect(useProjectStore.getState().visualLayers.find((candidate) => candidate.sceneId === 'layered-circles')?.settings).toEqual(SCENE_MODULES['layered-circles'].defaults);
   });
@@ -117,5 +120,28 @@ describe('project store', () => {
     const values = Object.values(randomized);
     expect(values.every((value) => value >= 0 && value <= 1)).toBe(true);
     expect(new Set(values).size).toBeGreaterThan(3);
+  });
+
+  it('keeps every parameter independent after repeated randomize actions', () => {
+    const store = useProjectStore.getState();
+    store.selectScene('layered-circles');
+    store.toggleScene('layered-circles');
+
+    const snapshots: SceneSettings[] = [];
+    const seeds: number[] = [];
+    for (let click = 0; click < 40; click += 1) {
+      store.randomizeScene();
+      const state = useProjectStore.getState();
+      const layer = state.visualLayers.find((candidate) => candidate.sceneId === 'layered-circles');
+      snapshots.push({ ...layer!.settings });
+      seeds.push(layer!.seed);
+    }
+
+    const lateSnapshot = snapshots[snapshots.length - 1];
+    expect(seeds.every((seed) => Number.isSafeInteger(seed) && seed >= 0 && seed <= 0xffffffff)).toBe(true);
+    expect(new Set(Object.values(lateSnapshot)).size).toBeGreaterThan(3);
+    for (const key of Object.keys(DEFAULT_SCENE_SETTINGS) as Array<keyof SceneSettings>) {
+      expect(new Set(snapshots.map((snapshot) => snapshot[key])).size).toBeGreaterThan(3);
+    }
   });
 });

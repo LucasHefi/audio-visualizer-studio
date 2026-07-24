@@ -477,12 +477,36 @@ const fluidGlow: SceneModule = {
 
 export interface LayeredCirclePoint {
   column: number;
+  row: number;
   depth: number;
   x: number;
   y: number;
   radius: number;
+  radiusY: number;
   energy: number;
 }
+
+const getLayeredCircleEnergy = (
+  frame: AudioFrame,
+  column: number,
+  row: number,
+  columns: number,
+  rows: number,
+  settings: SceneSettings,
+): number => {
+  const horizontalProgress = column / Math.max(1, columns - 1);
+  const verticalProgress = row / Math.max(1, rows - 1);
+  const frequencyProgress = horizontalProgress * 0.72 + verticalProgress * 0.28;
+  const bin = Math.min(frame.frequencyBins.length - 1, Math.floor(frequencyProgress * Math.max(0, frame.frequencyBins.length - 1)));
+  const spectral = Math.max(0, (frame.frequencyBins[bin] ?? 0) / 255);
+  const spatialWeight = 0.88 + seeded(column + 17, row + 23) * 0.18;
+  return clamp(
+    (spectral * 0.54 + frame.bassEnergy * 0.28 + frame.midEnergy * 0.18)
+      * settings.sensitivity
+      * spatialWeight
+      + frame.beatPulse * settings.energy * 0.26,
+  );
+};
 
 export const createLayeredCircleStackGeometry = (
   width: number,
@@ -494,33 +518,46 @@ export const createLayeredCircleStackGeometry = (
   reducedMotion = false,
 ): readonly LayeredCirclePoint[] => {
   const columns = Math.max(5, Math.min(12, Math.floor(5 + settings.density * 8)));
+  const rows = Math.max(3, Math.min(7, Math.floor(3 + settings.density * 5)));
   const maxDepth = Math.max(4, Math.min(10, Math.floor(4 + settings.density * 8)));
-  const spacingX = width / (columns + 1);
-  const baseY = height * 0.86;
-  const baseRadius = Math.min(spacingX * 0.32, height * 0.045);
+  const marginX = width * 0.13;
+  const marginY = height * 0.2;
+  const spacingX = (width - marginX * 2) / Math.max(1, columns - 1);
+  const spacingY = (height - marginY * 2) / Math.max(1, rows - 1);
+  const baseRadius = Math.min(spacingX, spacingY) * 0.34;
   const motion = reducedMotion ? 0 : settings.motion;
+  const stackOffsetX = baseRadius * (0.32 + settings.sensitivity * 0.28);
+  const stackOffsetY = baseRadius * (0.58 + settings.energy * 0.22);
+  const points: LayeredCirclePoint[] = [];
 
-  return Array.from({ length: columns }, (_, column) => {
-    const bin = Math.floor((column / columns) * frame.frequencyBins.length * 0.92);
-    const spectral = (frame.frequencyBins[bin] ?? 0) / 255;
-    const energy = clamp((spectral * 0.68 + frame.bassEnergy * 0.32) * settings.sensitivity + frame.beatPulse * settings.energy * 0.24);
-    const stackCount = Math.max(2, Math.min(maxDepth, Math.round(2 + energy * (maxDepth - 2))));
-    const phase = seeded(seed, column) * Math.PI * 2;
-    const drift = Math.sin(elapsed * 0.001 * motion + phase) * spacingX * 0.06;
+  for (let row = 0; row < rows; row += 1) {
+    const rowProgress = row / Math.max(1, rows - 1);
+    for (let column = 0; column < columns; column += 1) {
+      const energy = getLayeredCircleEnergy(frame, column, row, columns, rows, settings);
+      const stackCount = Math.max(2, Math.min(maxDepth, Math.round(2 + energy * (maxDepth - 2))));
+      const phase = seeded(seed + row * 31, column) * Math.PI * 2;
+      const drift = Math.sin(elapsed * 0.001 * motion + phase) * spacingX * 0.025;
+      const baseX = marginX + column * spacingX + rowProgress * spacingX * 0.12 + drift;
+      const baseY = marginY + row * spacingY - rowProgress * height * 0.04;
 
-    return Array.from({ length: stackCount }, (_, depth) => {
-      const progress = depth / Math.max(1, stackCount - 1);
-      const radius = baseRadius * (1 - progress * 0.18 + energy * 0.12);
-      return {
-        column,
-        depth,
-        x: spacingX * (column + 1) + drift,
-        y: baseY - depth * baseRadius * 1.62,
-        radius,
-        energy,
-      };
-    });
-  }).flat();
+      for (let depth = 0; depth < stackCount; depth += 1) {
+        const progress = depth / Math.max(1, stackCount - 1);
+        const radius = baseRadius * (1 - progress * 0.08 + energy * 0.12);
+        points.push({
+          column,
+          row,
+          depth,
+          x: baseX + depth * stackOffsetX,
+          y: baseY - depth * stackOffsetY * (0.86 + energy * 0.14),
+          radius,
+          radiusY: radius * (0.52 + settings.sensitivity * 0.14),
+          energy,
+        });
+      }
+    }
+  }
+
+  return points;
 };
 
 export const renderLayeredCirclesFrame = (
@@ -536,21 +573,26 @@ export const renderLayeredCirclesFrame = (
 ): void => {
   paintBackground(ctx, width, height, palette, 0.78 + settings.background * 0.42);
   const geometry = createLayeredCircleStackGeometry(width, height, frame, settings, elapsed, seed, reducedMotion);
-  const colors = [palette.secondary, palette.primary, palette.accent, palette.muted, palette.surface];
+  const colors = [palette.secondary, palette.primary, palette.accent, palette.muted];
 
   ctx.save();
-  ctx.globalCompositeOperation = 'screen';
+  ctx.globalCompositeOperation = 'source-over';
   for (const point of geometry) {
+    const isBase = point.depth === 0;
     const progress = point.depth / 10;
-    const color = colors[(point.column + point.depth) % colors.length];
-    ctx.fillStyle = hexToRgba(color, 0.36 + point.energy * 0.24 + (1 - progress) * 0.12);
-    ctx.strokeStyle = hexToRgba(color, 0.66 + point.energy * 0.2);
+    const color = isBase ? palette.background : colors[(point.column + point.row + point.depth - 1) % colors.length];
+    const alpha = isBase ? 0.92 : 0.34 + point.energy * 0.26 + (1 - progress) * 0.14;
+    ctx.fillStyle = hexToRgba(color, alpha);
+    ctx.strokeStyle = hexToRgba(color, isBase ? 0.72 : 0.56 + point.energy * 0.24);
     ctx.lineWidth = Math.max(1, Math.min(width, height) / 420);
+    ctx.shadowBlur = isBase ? 0 : settings.glow * 8;
+    ctx.shadowColor = hexToRgba(color, 0.42);
     ctx.beginPath();
-    ctx.ellipse(point.x, point.y, point.radius, point.radius * (0.68 + settings.sensitivity * 0.14), 0, 0, Math.PI * 2);
+    ctx.ellipse(point.x, point.y, point.radius, point.radiusY, -0.12, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
   }
+  ctx.shadowBlur = 0;
   ctx.restore();
 };
 

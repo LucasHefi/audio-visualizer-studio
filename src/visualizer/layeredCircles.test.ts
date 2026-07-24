@@ -39,13 +39,22 @@ const context = () => {
 };
 
 describe('Layered Circles renderer', () => {
-  it('renders audio-sized circle stacks from a shared bottom baseline', () => {
+  it('renders audio-sized top-down stacks on a regular grid with an oblique rise', () => {
     const quietGeometry = createLayeredCircleStackGeometry(1280, 720, frame({ beatPulse: 0 }), settings, 1000, 42);
     const loudGeometry = createLayeredCircleStackGeometry(1280, 720, frame({ beatPulse: 1, bassEnergy: 1 }), settings, 1000, 42);
-    expect(new Set(quietGeometry.map((point) => point.column)).size).toBeGreaterThan(4);
-    expect(quietGeometry.every((point, index, all) => index === 0 || point.column >= all[index - 1].column)).toBe(true);
+    const quietBase = quietGeometry.filter((point) => point.depth === 0);
+    const origin = quietGeometry.find((point) => point.column === 0 && point.row === 0 && point.depth === 0);
+    const lifted = quietGeometry.find((point) => point.column === 0 && point.row === 0 && point.depth === 1);
+
+    expect(new Set(quietBase.map((point) => point.column)).size).toBeGreaterThan(4);
+    expect(new Set(quietBase.map((point) => point.row)).size).toBeGreaterThan(2);
+    expect(origin).toBeDefined();
+    expect(lifted).toBeDefined();
+    expect(lifted!.x).toBeGreaterThan(origin!.x);
+    expect(lifted!.y).toBeLessThan(origin!.y);
+    expect(quietGeometry.every((point) => point.radiusY > 0)).toBe(true);
+    expect(quietGeometry.every((point) => point.radiusY < point.radius)).toBe(true);
     expect(loudGeometry.length).toBeGreaterThan(quietGeometry.length);
-    expect(new Set(quietGeometry.map((point) => point.y)).size).toBeGreaterThan(1);
 
     const quiet = context();
     const loud = context();

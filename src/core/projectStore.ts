@@ -99,8 +99,14 @@ export const migrateProject = (persisted: unknown, version = 1): StoredProjectSt
 export const normalizeProjectState = (persisted: unknown): StoredProjectState => migrateProject(persisted, SCENE_SETTINGS_SCHEMA.version);
 
 const randomUnit = (seed: number, index: number): number => {
-  const value = Math.sin(seed * 12.9898 + index * 78.233) * 43758.5453;
+  const safeSeed = seed >>> 0;
+  const value = Math.sin(safeSeed * 12.9898 + index * 78.233) * 43758.5453;
   return value - Math.floor(value);
+};
+
+const nextRandomSeed = (seed: number): number => {
+  const safeSeed = seed >>> 0;
+  return (Math.imul(safeSeed, 1664525) + 1013904223) >>> 0 || 1;
 };
 
 export const randomizeSettings = (settings: SceneSettings, seed: number): SceneSettings => {
@@ -184,7 +190,7 @@ export const useProjectStore = create<ProjectStore>()(
       }),
       randomizeScene: () => set((state) => {
         const current = selectedLayer(state);
-        const nextSeed = Math.abs(Math.floor(current.seed * 1664525 + 1013904223)) || 1;
+        const nextSeed = nextRandomSeed(current.seed);
         const nextLayer = { ...current, seed: nextSeed, settings: randomizeSettings(current.settings, nextSeed) };
         return { visualLayers: state.visualLayers.map((layer) => layer.id === current.id ? nextLayer : layer), ...withSelectedMirror(state, nextLayer) };
       }),
